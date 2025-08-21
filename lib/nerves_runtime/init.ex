@@ -65,7 +65,7 @@ defmodule Nerves.Runtime.Init do
     :ignore
   end
 
-  @spec init_application_partition :: :mounted | :mounted_with_error | :noop | :unmounted
+  @spec init_application_partition :: :mounted | :noop | :unmounted
   def init_application_partition() do
     prefix = "nerves_fw_application_part0"
     fstype = KV.get_active("#{prefix}_fstype")
@@ -83,9 +83,7 @@ defmodule Nerves.Runtime.Init do
   defp do_format(s) do
     s
     |> mounted_state()
-    |> unmount_if_error()
     |> mount()
-    |> unmount_if_error()
     |> format_if_unmounted()
     |> mount()
     |> maybe_set_shell_history()
@@ -98,22 +96,17 @@ defmodule Nerves.Runtime.Init do
 
   @doc false
   @spec mount_point_state(MountInfo.mount_info(), String.t()) ::
-          :mounted | :mounted_with_error | :unmounted
+          :mounted | :unmounted
   def mount_point_state(mounts, target) do
     info = MountInfo.find_by_mount_point(mounts, target)
 
     cond do
       info == nil -> :unmounted
-      MountInfo.read_only?(info) -> :mounted_with_error
+      MountInfo.read_only?(info) ->
+        Logger.info("Mounted read-only")
+        :mounted
       true -> :mounted
     end
-  end
-
-  defp mount(%{mounted: :mounted, fstype: "f2fs"} = s) do
-    # For already mounted f2fs, use remount to update options
-    Logger.info("f2fs already mounted, remounting with errors=remount-ro")
-    check_cmd("mount", ["-o", "remount,rw,errors=remount-ro", s.target], :info)
-    s
   end
 
   defp mount(%{mounted: :mounted} = s), do: s
@@ -128,13 +121,6 @@ defmodule Nerves.Runtime.Init do
     check_cmd("mount", ["-t", s.fstype, "-o", mount_opts, s.devpath, s.target], :info)
     mounted_state(s)
   end
-
-  defp unmount_if_error(%{mounted: :mounted_with_error} = s) do
-    check_cmd("umount", [s.target], :info)
-    mounted_state(s)
-  end
-
-  defp unmount_if_error(s), do: s
 
   defp format_if_unmounted(%{mounted: :unmounted, fstype: fstype, devpath: devpath} = s) do
     Logger.warning(
