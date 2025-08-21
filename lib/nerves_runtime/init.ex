@@ -109,10 +109,23 @@ defmodule Nerves.Runtime.Init do
     end
   end
 
+  defp mount(%{mounted: :mounted, fstype: "f2fs"} = s) do
+    # For already mounted f2fs, use remount to update options
+    Logger.info("f2fs already mounted, remounting with errors=remount-ro")
+    check_cmd("mount", ["-o", "remount,rw,errors=remount-ro", s.target], :info)
+    s
+  end
+
   defp mount(%{mounted: :mounted} = s), do: s
 
   defp mount(s) do
-    check_cmd("mount", ["-t", s.fstype, "-o", "rw", s.devpath, s.target], :info)
+    mount_opts =
+      case s.fstype do
+        "f2fs" -> "rw,errors=remount-ro"
+        _ -> "rw"
+      end
+
+    check_cmd("mount", ["-t", s.fstype, "-o", mount_opts, s.devpath, s.target], :info)
     mounted_state(s)
   end
 
